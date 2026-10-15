@@ -668,37 +668,58 @@ async function syCopyCardNumber(){
 }
 document.getElementById('syCopyCard').addEventListener('click',syCopyCardNumber);
 
-/* Automatic continuous faculty slider with mouse drag and native touch swipe */
+/* Faculty carousel: continuous autoplay on mobile and desktop; touch swipe and mouse drag */
 (()=>{
  const viewport=document.querySelector('#instructors .instructor-marquee');
  const track=viewport?.querySelector('.instructor-track');
  if(!viewport||!track)return;
- let dragging=false,holdUntil=0,lastX=0,lastTime=0;
  const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
- function cycleWidth(){return track.scrollWidth/2}
- function normalize(){const half=cycleWidth();if(half>0){if(viewport.scrollLeft>=half)viewport.scrollLeft-=half;else if(viewport.scrollLeft<0)viewport.scrollLeft+=half}}
- function pause(ms=2600){holdUntil=performance.now()+ms}
- viewport.addEventListener('mouseleave',()=>{if(!dragging)holdUntil=0;});
+ let mouseDragging=false, touching=false, pointerX=0, resumeAt=0, previousTime=0, pixelRemainder=0;
+ // Two identical sets of faculty cards form a seamless carousel.
+ const cycle=()=>track.scrollWidth/2;
+ function normalize(){
+   const width=cycle();
+   if(width<=0)return;
+   if(viewport.scrollLeft>=width)viewport.scrollLeft-=width;
+   else if(viewport.scrollLeft<0)viewport.scrollLeft+=width;
+ }
+ function resumeSoon(){resumeAt=performance.now()+650;}
  viewport.addEventListener('pointerdown',e=>{
    if(e.pointerType!=='mouse'||e.button!==0)return;
-   dragging=true;lastX=e.clientX;pause();viewport.classList.add('sy-dragging');viewport.setPointerCapture(e.pointerId);e.preventDefault();
+   mouseDragging=true;pointerX=e.clientX;viewport.classList.add('sy-dragging');
+   try{viewport.setPointerCapture(e.pointerId)}catch{}
+   e.preventDefault();
  });
  viewport.addEventListener('pointermove',e=>{
-   if(!dragging)return;
-   const delta=e.clientX-lastX;lastX=e.clientX;
-   viewport.scrollLeft-=delta;normalize();pause();
+   if(!mouseDragging)return;
+   viewport.scrollLeft-=e.clientX-pointerX;
+   pointerX=e.clientX;
+   normalize();
  });
- function finish(e){if(!dragging)return;dragging=false;viewport.classList.remove('sy-dragging');pause(650);try{if(viewport.hasPointerCapture(e.pointerId))viewport.releasePointerCapture(e.pointerId)}catch{}}
- viewport.addEventListener('pointerup',finish);
- viewport.addEventListener('pointercancel',finish);
- viewport.addEventListener('touchstart',()=>pause(4000),{passive:true});
- viewport.addEventListener('touchmove',()=>pause(4000),{passive:true});
- viewport.addEventListener('touchend',()=>pause(650),{passive:true});
- viewport.addEventListener('touchcancel',()=>pause(650),{passive:true});
- viewport.addEventListener('scroll',()=>{normalize()},{passive:true});
+ function endMouse(e){
+   if(!mouseDragging)return;
+   mouseDragging=false;viewport.classList.remove('sy-dragging');resumeSoon();
+   try{if(viewport.hasPointerCapture(e.pointerId))viewport.releasePointerCapture(e.pointerId)}catch{}
+ }
+ viewport.addEventListener('pointerup',endMouse);
+ viewport.addEventListener('pointercancel',endMouse);
+ viewport.addEventListener('lostpointercapture',()=>{if(mouseDragging){mouseDragging=false;viewport.classList.remove('sy-dragging');resumeSoon()}});
+ viewport.addEventListener('touchstart',()=>{touching=true;},{passive:true});
+ viewport.addEventListener('touchend',()=>{touching=false;resumeSoon();},{passive:true});
+ viewport.addEventListener('touchcancel',()=>{touching=false;resumeSoon();},{passive:true});
+ viewport.addEventListener('scroll',normalize,{passive:true});
  function frame(now){
-   if(lastTime){const dt=Math.min(now-lastTime,60);if(!dragging&&now>holdUntil&&!reduceMotion.matches){viewport.scrollLeft+=dt*.028;normalize()}}
-   lastTime=now;requestAnimationFrame(frame);
+   if(previousTime){
+     const delta=Math.min(now-previousTime,64);
+     if(!mouseDragging&&!touching&&now>=resumeAt&&!reduceMotion.matches){
+       // Accumulate subpixels: mobile browsers round scrollLeft and otherwise stall.
+       pixelRemainder+=delta*0.035;
+       const wholePixels=Math.floor(pixelRemainder);
+       if(wholePixels>0){viewport.scrollLeft+=wholePixels;pixelRemainder-=wholePixels;normalize();}
+     }
+   }
+   previousTime=now;
+   requestAnimationFrame(frame);
  }
  requestAnimationFrame(frame);
 })();
